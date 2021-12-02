@@ -1,0 +1,67 @@
+---
+- name: deploy
+  hosts: all
+  become: no
+  gather_facts: no
+
+  pre_tasks:
+    - name: create project dir
+      tempfile:
+        state: directory
+      register: tempdir
+      tags:
+        - always
+
+    - name: upload project
+      copy:
+        src: docker-compose.yml
+        dest: "{{ tempdir.path }}"
+      tags:
+        - always
+
+    - name: ensure external network is present
+      docker_network:
+        name: "{{ compose_project_name }}"
+      tags:
+        - deploy
+
+  tasks:
+    - name: deploy project
+      environment:
+        AMPQ_USER: "{{ lookup('env', 'AMPQ_USER') }}"
+        AMPQ_PASS: "{{ lookup('env', 'AMPQ_PASS') }}"
+        APPLICATION_HOST: "{{ lookup('env', 'APPLICATION_HOST') }}"
+        BROKER_DOCKER_NETWORK: "{{ compose_project_name }}"
+        TZ
+        TECHERS_IP_WHITE_LIST: "{{ lookup('env', 'TECHERS_IP_WHITE_LIST') }}"
+      docker_compose:
+        project_name: "{{ compose_project_name }}"
+        project_src: "{{ tempdir.path }}"
+        pull: yes
+        recreate: "{{ compose_recreate | default(omit) }}"
+        remove_images: "{{ compose_remove_images | default(omit) }}"
+        remove_orphans: yes
+        remove_volumes: "{{ compose_remove_volumes | default(omit) }}"
+        state: "{{ compose_state | default(omit) }}"
+      tags:
+        - always
+
+    - name: wait for services to start
+      command: docker-compose -p {{ compose_project_name }} ps
+      register: result
+      until: "'starting' not in result.stdout"
+      retries: 10
+      delay: 10
+      changed_when: no
+      failed_when: "'unhealthy' in result.stdout or 'starting' in result.stdout or result.stdout is regex('Exit\\s[^0]')"
+      args:
+        chdir: "{{ tempdir.path }}"
+      tags:
+        - deploy
+
+    - name: delete project
+      file:
+        path: "{{ tempdir.path }}"
+        state: absent
+      tags:
+        - always

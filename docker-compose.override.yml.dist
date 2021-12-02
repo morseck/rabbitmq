@@ -1,0 +1,8 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.broker.entrypoints: http
+      traefik.http.routers.broker.tls: "false"

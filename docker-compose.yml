@@ -1,0 +1,49 @@
+version: '3.8'
+
+networks:
+  broker:
+    name: ${BROKER_DOCKER_NETWORK:-techers-broker}
+  proxy:
+    name: ${TRAEFIK_DOCKER_NETWORK:-web}
+    external: true
+
+volumes:
+  config:
+  data:
+
+services:
+  rabbitmq:
+      #image: rabbitmq:management-alpine
+    build: .
+    restart: unless-stopped
+    hostname: amqp
+    networks:
+      broker:
+      proxy:
+    environment:
+      RABBITMQ_DEFAULT_USER: ${AMPQ_USER:-techers}
+      RABBITMQ_DEFAULT_PASS: ${AMPQ_PASS:-techers}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "--quiet", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - type: volume
+        source: data
+        target: /var/lib/rabbitmq
+        read_only: no
+      - type: volume
+        source: config
+        target: /etc/rabbitmq
+      - type: tmpfs
+        target: /var/log/rabbitmq
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-broker}.tls=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-broker}.tls.certresolver=letsencrypt
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-broker}.entrypoints=https
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-broker}.rule=Host(`${APPLICATION_HOST:-broker.techers.127.0.0.1.nip.io}`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME:-broker}.middlewares=techers-restrict-access
+      - traefik.http.services.${COMPOSE_PROJECT_NAME:-broker}.loadbalancer.server.port=15672
+      - traefik.http.middlewares.techers-restrict-access.ipwhitelist.sourceRange=${TECHERS_IP_WHITE_LIST:-127.0.0.1}
